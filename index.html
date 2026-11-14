@@ -26,8 +26,6 @@ a{color:inherit}
 nav{margin-inline-start:auto;display:flex;gap:4px;flex-wrap:wrap}
 nav a{text-decoration:none;padding:6px 14px;border-radius:999px;font-size:15px;color:#f3dcd5}
 nav a[aria-current="page"]{background:var(--primary);color:#fff;font-weight:700}
-nav a.adm{display:none}
-body.unlocked nav a.adm{display:inline-block}
 nav a:hover{background:#3a3334}
 nav a[aria-current="page"]:hover{background:var(--primary)}
 
@@ -94,8 +92,6 @@ th{background:var(--dark);color:var(--bg);position:sticky;top:0}
 
 footer{border-top:1px solid var(--line);padding:18px;display:flex;justify-content:center;align-items:center;gap:10px;color:var(--muted);font-size:14px}
 footer svg{width:32px;height:32px;display:block}
-.foot-logo{display:inline-flex;border-radius:9px;cursor:pointer;transition:transform .15s}
-.foot-logo:hover{transform:scale(1.08)}
 @media (max-width:560px){
   .hero{padding:24px 18px}.hero svg{margin:0}
   .bar-row{grid-template-columns:1fr 56px}.bar-row .track{grid-column:1 / -1;order:3}
@@ -154,8 +150,6 @@ nav a:hover{background:rgba(255,255,255,.14)}
     <nav aria-label="منوی اصلی">
       <a href="#home" data-nav="home">خانه</a>
       <a href="#survey" data-nav="survey">پرسش‌نامه</a>
-      <a class="adm" href="#stats" data-nav="stats">آمار</a>
-      <a class="adm" href="#data" data-nav="data">بانک اطلاعات</a>
     </nav>
   </div>
 </header>
@@ -192,28 +186,10 @@ nav a:hover{background:rgba(255,255,255,.14)}
   </div>
 </section>
 
-<!-- LOCK -->
-<section class="page" id="p-lock">
-  <h1>ورود مدیر</h1>
-  <div id="lock-body"></div>
-</section>
-
-<!-- STATS -->
-<section class="page" id="p-stats">
-  <h1>آمار پاسخ‌ها</h1>
-  <div id="stats-body"></div>
-</section>
-
-<!-- DATA -->
-<section class="page" id="p-data">
-  <h1>بانک اطلاعات</h1>
-  <div id="data-body"></div>
-</section>
-
 </main>
 
 <footer>
-  <a href="#stats" class="foot-logo" aria-label="ورود مدیر"><svg role="img" aria-label="لوگوی رودی"><use href="#rudi-logo"/></svg></a>
+  <svg role="img" aria-label="لوگوی رودی"><use href="#rudi-logo"/></svg>
   <span>رودی؛ مرجع تجربه، تفریح و دورهمی</span>
 </footer>
 
@@ -224,14 +200,32 @@ const ACTS=['کافه و رستوران','سینما','کنسرت و موسیق�
 const CITIES=['تهران','کرج','اصفهان','شیراز','مشهد','تبریز','اهواز','رشت','قم','کرمان','ارومیه','یزد','ساری','همدان','قزوین','بندرعباس','سایر'];
 const TIMES=['کمتر از ۲ ساعت','۲ تا ۱۰ ساعت','بیشتر از ۱۰ ساعت'];
 const DAYS=['شنبه تا چهارشنبه','پنجشنبه و جمعه','هر دو'];
-const KEY='rudi_survey_v1';
+const SHEET_URL=''; // آدرس Web App گوگل (Apps Script)
+const QKEY='rudi_pending_v1';
 const fa=n=>Number(n).toLocaleString('fa-IR');
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-/* storage (falls back to memory if the browser blocks it) */
-let mem=[];
-function load(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return mem}}
-function save(rows){mem=rows;try{localStorage.setItem(KEY,JSON.stringify(rows))}catch(e){}}
+/* sending to Google Sheet (unsent answers are kept on the device and retried) */
+let memQ=[];
+function getQ(){try{return JSON.parse(localStorage.getItem(QKEY)||'[]')}catch(e){return memQ}}
+function setQ(q){memQ=q;try{localStorage.setItem(QKEY,JSON.stringify(q))}catch(e){}}
+async function post(row){
+  if(!SHEET_URL)throw new Error('no-url');
+  await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(row)});
+}
+let flushing=false;
+async function flush(){
+  if(flushing||!SHEET_URL)return;
+  flushing=true;
+  try{
+    let q=getQ();
+    while(q.length){
+      try{await post(q[0])}catch(e){break}
+      q=q.slice(1);setQ(q);
+    }
+  }finally{flushing=false}
+}
+window.addEventListener('online',flush);
 
 /* build form */
 function group(name,title,hint,items,type){
@@ -247,6 +241,7 @@ document.getElementById('form').innerHTML=
   group('time','۶. در هفته چقدر زمان به تفریح اختصاص می‌دهی؟','',TIMES,'radio')+
   group('days','۷. بیشتر در چه روزهایی از هفته تفریح می‌کنی؟','',DAYS,'radio')+
   `<fieldset class="q"><legend>۸. شماره تماس (اختیاری)</legend><p class="hint">اگر دوست داری رودی برای رویدادهای مناسب با تو تماس بگیرد، شمارهات را بنویس. شماره فقط برای همین استفاده می‌شود.</p><input class="field ltr" type="tel" id="phone" inputmode="numeric" autocomplete="tel" maxlength="14" placeholder="09123456789" aria-label="شماره تماس"></fieldset>`+
+  '<input type="text" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;height:0;width:0;opacity:0">'+
   '<button class="btn red" type="submit">ثبت پاسخ‌ها</button>';
 
 const form=document.getElementById('form'),err=document.getElementById('err');
@@ -283,127 +278,18 @@ form.addEventListener('submit',e=>{
   if(phoneRaw&&!phone)miss.push('شماره تماس معتبر نیست؛ مثل 09123456789 بنویس یا خالی بگذار');
   if(miss.length){err.textContent='این بخش‌ها هنوز کامل نیست: '+miss.join('، ');err.classList.add('on');err.scrollIntoView({block:'center'});return}
   err.classList.remove('on');
-  const rows=load();
-  rows.push({id:Date.now(),date:new Date().toISOString(),name:fullname,city,phone,age:v('age'),gender:v('gender'),acts,other:(document.getElementById('otherText').value||'').trim(),time:v('time'),days:v('days')});
-  save(rows);
-  form.reset();document.getElementById('otherBox').classList.remove('on');document.getElementById('cityBox').classList.remove('on');
-  go('thanks');
-});
-
-/* stats */
-function count(rows,fn){const m={};rows.forEach(r=>{[].concat(fn(r)).forEach(k=>{m[k]=(m[k]||0)+1})});return m}
-function bars(m,order,total){
-  const keys=order||Object.keys(m).sort((a,b)=>m[b]-m[a]);
-  return keys.map(k=>{const c=m[k]||0,p=total?Math.round(c/total*100):0;
-    return `<div class="bar-row"><span>${esc(k)}</span><div class="track"><div class="fill" data-w="${p}"></div></div><span class="num">${fa(c)} (${fa(p)}٪)</span></div>`}).join('');
-}
-function renderStats(){
-  const rows=load(),box=document.getElementById('stats-body');
-  if(!rows.length){box.innerHTML='<div class="empty"><p>هنوز پاسخی ثبت نشده.</p><a class="btn red" href="#survey">اولین پاسخ را ثبت کن</a> <button class="btn ghost" id="demo1" type="button">پر کردن با داده نمونه</button></div>';
-    document.getElementById('demo1').onclick=addDemo;return}
-  const n=rows.length;
-  const byCity=count(rows,r=>r.city||'نامشخص'),byAge=count(rows,r=>r.age),byG=count(rows,r=>r.gender),byA=count(rows,r=>r.acts),byT=count(rows,r=>r.time),byD=count(rows,r=>r.days);
-  const topAge=AGES.map(a=>{
-    const sub=rows.filter(r=>r.age===a);if(!sub.length)return `<div class="age-row"><b>${a}</b> بدون پاسخ</div>`;
-    const m=count(sub,r=>r.acts);const top=Object.keys(m).sort((x,y)=>m[y]-m[x]).slice(0,3);
-    return `<div class="age-row"><b>${a}</b> ${top.map(esc).join('، ')} <span class="num" style="color:var(--muted)">(از ${fa(sub.length)} پاسخ)</span></div>`}).join('');
-  box.innerHTML=`
-    <div class="total"><b>${fa(n)}</b><span>پاسخ ثبت شده</span></div>
-    <div class="grid">
-      <div class="panel"><h2>شهر</h2>${bars(byCity,null,n)}</div>
-      <div class="panel"><h2>توزیع سنی</h2>${bars(byAge,AGES,n)}</div>
-      <div class="panel"><h2>جنسیت</h2>${bars(byG,GENDERS,n)}</div>
-      <div class="panel"><h2>زمان تفریح در هفته</h2>${bars(byT,TIMES,n)}</div>
-      <div class="panel"><h2>روزهای تفریح</h2>${bars(byD,DAYS,n)}</div>
-    </div>
-    <div class="panel"><h2>محبوب‌ترین تفریح‌ها</h2>${bars(byA,null,n)}</div>
-    <div class="panel"><h2>سه تفریح برتر هر گروه سنی</h2>${topAge}</div>`;
-  requestAnimationFrame(()=>box.querySelectorAll('.fill').forEach(f=>f.style.width=f.dataset.w+'%'));
-}
-
-/* data page */
-let exportedCount=-1,askDelete=false;
-function renderData(){
-  const rows=load(),box=document.getElementById('data-body');
-  if(!rows.length){box.innerHTML='<div class="empty"><p>بانک اطلاعات خالی است.</p><a class="btn red" href="#survey">ثبت پاسخ</a> <button class="btn ghost" id="demo2" type="button">پر کردن با داده نمونه</button></div>';
-    document.getElementById('demo2').onclick=addDemo;return}
-  const body=rows.slice().reverse().map((r,i)=>`<tr><td>${fa(rows.length-i)}</td><td>${new Date(r.date).toLocaleDateString('fa-IR')}</td><td>${esc(r.name||'—')}</td><td>${esc(r.city||'—')}</td><td style="direction:ltr;text-align:right">${esc(r.phone||'—')}</td><td>${esc(r.age)}</td><td>${esc(r.gender)}</td><td>${r.acts.map(esc).join('، ')}${r.other?` (${esc(r.other)})`:''}</td><td>${esc(r.time)}</td><td>${esc(r.days)}</td></tr>`).join('');
-  const canDel=exportedCount===rows.length;
-  if(!canDel)askDelete=false;
-  const tools=askDelete
-    ?`<div class="panel" role="alertdialog" aria-label="تأیید حذف"><p style="margin:0 0 12px;font-weight:700">${fa(rows.length)} پاسخ برای همیشه حذف می‌شود. مطمئنی؟</p><div class="tools" style="margin:0"><button class="btn red small" id="delYes" type="button">بله، حذف شود</button><button class="btn ghost small" id="delNo" type="button">انصراف</button></div></div>`
-    :`<div class="tools" style="margin-bottom:6px"><button class="btn red small" id="csv" type="button">خروجی اکسل (CSV)</button><button class="btn ghost small" id="clear" type="button" ${canDel?'':'disabled'}>حذف همه پاسخ‌ها</button></div><p class="hint" style="margin:0 0 14px;color:var(--muted);font-size:14px">${canDel?'از همه پاسخ‌ها خروجی گرفته شد. حالا می‌توانی آن‌ها را حذف کنی.':'دکمه حذف بعد از گرفتن خروجی اکسل فعال می‌شود.'}</p>`;
-  box.innerHTML=tools+`
-  <div class="tablewrap"><table><thead><tr><th>#</th><th>تاریخ</th><th>نام و نام خانوادگی</th><th>شهر</th><th>شماره تماس</th><th>سن</th><th>جنسیت</th><th>نوع تفریح</th><th>زمان در هفته</th><th>روزها</th></tr></thead><tbody>${body}</tbody></table></div>`;
-  if(askDelete){
-    document.getElementById('delYes').onclick=()=>{save([]);exportedCount=-1;askDelete=false;renderData()};
-    document.getElementById('delNo').onclick=()=>{askDelete=false;renderData()};
-    return;
-  }
-  document.getElementById('csv').onclick=()=>{
-    const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-    const lines=[['شناسه','تاریخ','نام و نام خانوادگی','شهر','شماره تماس','سن','جنسیت','نوع تفریح','سایر','زمان در هفته','روزها'].map(q).join(',')]
-      .concat(rows.map(r=>[r.id,r.date,r.name||'',r.city||'',r.phone?'\t'+r.phone:'',r.age,r.gender,r.acts.join(' | '),r.other,r.time,r.days].map(q).join(',')));
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'}));
-    a.download='rudi-survey.csv';document.body.appendChild(a);a.click();a.remove();
-    exportedCount=rows.length;renderData();
-  };
-  document.getElementById('clear').onclick=()=>{if(exportedCount===load().length){askDelete=true;renderData()}};
-}
-
-function addDemo(){
-  const pick=a=>a[Math.floor(Math.random()*a.length)];
-  const rows=load();
-  for(let i=0;i<40;i++){
-    const k=1+Math.floor(Math.random()*4),s=new Set();while(s.size<k)s.add(pick(ACTS.slice(0,24)));
-    rows.push({id:Date.now()+i,date:new Date().toISOString(),name:'',city:pick(CITIES.slice(0,16)),phone:'',age:pick(AGES),gender:pick(GENDERS),acts:[...s],other:'',time:pick(TIMES),days:pick(DAYS)});
-  }
-  save(rows);route();
-}
-
-
-/* admin lock (light barrier on this device) */
-let unlocked=false,pending='stats',memPin='';
-const PINKEY='rudi_admin_pin_v2';
-const PIN_OK=/^[A-Za-z0-9]+$/;
-function getPin(){try{return localStorage.getItem(PINKEY)||memPin}catch(e){return memPin}}
-function setPin(h){memPin=h;try{localStorage.setItem(PINKEY,h)}catch(e){}}
-function hashPin(str){
-  str='rudi|'+str;
-  let h1=0xdeadbeef,h2=0x41c6ce57;
-  for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}
-  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);
-  h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
-  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36);
-}
-function renderLock(){
-  const box=document.getElementById('lock-body'),has=!!getPin();
-  box.innerHTML=`<fieldset class="q"><legend>${has?'رمز مدیر را وارد کن':'برای محافظت از آمار، یک رمز مدیر بساز'}</legend>${has?'':'<p class="hint">حداقل ۴ کاراکتر، فقط حروف و عدد انگلیسی. بین حروف بزرگ و کوچک فرق است (مثلاً Rudi و rudi دو رمز متفاوت‌اند). رمز فقط روی همین دستگاه ذخیره می‌شود.</p>'}<input class="field ltr" type="password" id="pin1" autocomplete="off" aria-label="رمز مدیر">${has?'':'<input class="field ltr" style="margin-top:10px" type="password" id="pin2" autocomplete="off" placeholder="تکرار رمز" aria-label="تکرار رمز">'}<div class="err" id="lockErr" role="alert" style="margin-top:12px"></div><div style="margin-top:12px"><button class="btn red" id="lockBtn" type="button">${has?'ورود':'ساخت رمز و ورود'}</button></div></fieldset>`;
-  const err=document.getElementById('lockErr');
-  const fail=t=>{err.textContent=t;err.classList.add('on')};
-  const submit=()=>{
-    const p=document.getElementById('pin1').value;
-    if(!PIN_OK.test(p))return fail('رمز فقط می‌تواند حروف و عدد انگلیسی باشد. کیبورد را روی انگلیسی بگذار.');
-    if(has){
-      if(hashPin(p)!==getPin())return fail('رمز درست نیست.');
-    }else{
-      if(p.length<4)return fail('رمز باید حداقل ۴ کاراکتر باشد.');
-      if(p!==document.getElementById('pin2').value)return fail('دو رمز یکی نیستند.');
-      setPin(hashPin(p));
-    }
-    unlocked=true;document.body.classList.add('unlocked');go(pending);
-  };
-  document.getElementById('lockBtn').onclick=submit;
-  box.querySelectorAll('input').forEach(i=>{
-    i.addEventListener('keydown',e=>{if(e.key==='Enter')submit()});
-    i.addEventListener('input',()=>{
-      const c=i.value.replace(/[^A-Za-z0-9]/g,'');
-      if(c!==i.value){i.value=c;fail('فقط حروف و عدد انگلیسی مجاز است.')}
-    });
-    i.setAttribute('autocapitalize','none');i.setAttribute('autocorrect','off');i.setAttribute('spellcheck','false');
+  const row={id:Date.now()+'-'+Math.random().toString(36).slice(2,7),date:new Date().toISOString(),name:fullname,city,phone,age:v('age'),gender:v('gender'),acts,other:(document.getElementById('otherText').value||'').trim().slice(0,60),time:v('time'),days:v('days')};
+  if(document.getElementById('hp')&&document.getElementById('hp').value)return; // honeypot
+  const btn=form.querySelector('button[type=submit]');
+  btn.disabled=true;
+  setQ(getQ().concat(row));
+  flush().then(()=>{
+    btn.disabled=false;
+    if(!SHEET_URL){err.textContent='ارسال پاسخ‌ها هنوز راه‌اندازی نشده است.';err.classList.add('on');return}
+    form.reset();document.getElementById('otherBox').classList.remove('on');document.getElementById('cityBox').classList.remove('on');
+    go('thanks');
   });
-}
+});
 
 /* router */
 let cur='home';
@@ -415,18 +301,15 @@ document.addEventListener('click',e=>{
   go(a.getAttribute('href').slice(1));
 });
 function route(){
-  let page=['home','survey','thanks','stats','data'].includes(cur)?cur:'home';
-  if((page==='stats'||page==='data')&&!unlocked){pending=page;page='lock';renderLock()}
+  let page=['home','survey','thanks'].includes(cur)?cur:'home';
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id==='p-'+page));
   document.querySelectorAll('nav a').forEach(a=>{
     const on=a.dataset.nav===page||(page==='thanks'&&a.dataset.nav==='survey');
     if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
   });
-  if(page==='stats')renderStats();
-  if(page==='data')renderData();
   window.scrollTo(0,0);
 }
-route();
+route();flush();
 </script>
 </body>
 </html>
